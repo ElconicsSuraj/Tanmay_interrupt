@@ -1,0 +1,80 @@
+#include <esp_sleep.h>
+#include "HX711.h"
+
+// Define the pins for the load cell and tare button
+#define LOADCELL_DOUT_PIN  5
+#define LOADCELL_SCK_PIN   18
+#define TARE_BUTTON_PIN    4 // Choose any GPIO pin for the tare button
+
+// Function declaration for weight measurement
+float weight();
+
+// Create an instance of the HX711 library for the load cell
+HX711 scale;
+
+// Calibration factor to adjust the scale reading
+float calibration_factor = 1800; // Adjust this based on your calibration
+
+void setup() {
+  // Initialize the serial communication
+  Serial.begin(115200);
+
+  // Set up the tare button pin as input with internal pull-up resistor
+  pinMode(TARE_BUTTON_PIN, INPUT_PULLUP);
+
+  // Initialize the HX711 scale with the specified pins
+  scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
+  scale.set_scale(); // Set the default scale
+
+  // Print initialization messages
+  Serial.println("I WOKEUP");
+  delay(1000); // Wait for serial to initialize
+  Serial.println("Internet Work");
+
+  // Configure the wake-up source to be an external trigger on RTC_IO pin 27
+  esp_sleep_enable_ext0_wakeup(GPIO_NUM_27, 1); // 1 = High, 0 = Low
+
+  // Read a baseline value for zero factor
+  long zero_factor = scale.read_average();
+  Serial.print("Zero factor: ");
+  Serial.println(zero_factor);
+
+  // Check if the tare button is pressed during setup
+  if (digitalRead(TARE_BUTTON_PIN) == LOW) {
+    scale.tare(); // If pressed, reset the scale to zero
+    Serial.println("Scale tared.");
+    delay(1000); // Debouncing delay
+    Serial.println("Entering deep sleep mode...");
+    delay(3000); // Wait for the last message to be sent
+  }
+
+  // Measure the current weight
+  float currentWeight = weight();
+  if (currentWeight >= 0) {
+    Serial.print("Weight: ");
+    Serial.println(currentWeight);
+  } else {
+    Serial.println("Negative weight, ignoring...");
+  }
+
+  delay(100);
+  Serial.println("*******************************");
+  Serial.println("Going To sleep");
+  Serial.println("*******************************");
+
+  // Enter deep sleep mode immediately after setup
+  esp_deep_sleep_start();
+}
+
+void loop() {
+  // Empty loop as it is not used in this application
+}
+
+// Function to measure weight using the HX711 library
+float weight() {
+  scale.set_scale(calibration_factor);
+  delay(100);
+  float weight = scale.get_units(20);
+  delay(100);
+  return (weight >= 0) ? weight : 0; // Ensure the weight is non-negative
+}
